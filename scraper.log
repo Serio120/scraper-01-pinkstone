@@ -1,0 +1,18 @@
+2025-12-16 15:53:40,708 - INFO - ==================================================
+2025-12-16 15:53:40,709 - INFO - INICIANDO NUEVO PROCESO DE SCRAPING DE CITAS
+2025-12-16 15:53:40,709 - INFO - ==================================================
+2025-12-16 15:53:40,709 - INFO - Accediendo a la página: http://quotes.toscrape.com/
+2025-12-16 15:53:41,944 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/2/
+2025-12-16 15:53:43,148 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/3/
+2025-12-16 15:53:44,349 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/4/
+2025-12-16 15:53:45,550 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/5/
+2025-12-16 15:53:46,751 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/6/
+2025-12-16 15:53:47,958 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/7/
+2025-12-16 15:53:49,164 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/8/
+2025-12-16 15:53:50,369 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/9/
+2025-12-16 15:53:51,571 - INFO - Accediendo a la página: http://quotes.toscrape.com/page/10/
+2025-12-16 15:53:51,774 - INFO - Se ha alcanzado la última página.
+2025-12-16 15:53:51,775 - INFO - Proceso de scraping finalizado. Total de citas encontradas: 100.
+2025-12-16 15:53:51,775 - INFO - Creando DataFrame y guardando 100 registros en citas.xlsx.
+2025-12-16 15:53:52,005 - INFO - ¡Éxito! El archivo se ha guardado correctamente.
+2025-12-16 15:53:52,005 - INFO - FIN DEL PROCESO.
