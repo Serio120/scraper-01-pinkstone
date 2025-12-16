@@ -2,69 +2,78 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import time
 
-def scrape_quotes():
+def scrape_all_quotes():
     """
-    Esta función recolecta citas de la página 'http://quotes.toscrape.com',
-    las procesa y las guarda en un archivo Excel.
+    Esta función recolecta TODAS las citas del sitio 'http://quotes.toscrape.com'
+    navegando a través de la paginación. Luego, guarda los datos en un archivo Excel.
     """
-    # URL del sitio a scrapear
-    url = "http://quotes.toscrape.com/"
+    # URL base para construir las URLs de las páginas siguientes
+    base_url = "http://quotes.toscrape.com"
+    # URL relativa inicial, comenzando en la primera página
+    relative_url = "/"
+    # Lista para almacenar TODOS los datos extraídos de todas las páginas
+    all_scraped_data = []
+    
+    print("Iniciando scraping con paginación...")
 
-    print(f"Iniciando scraping de {url}...")
+    while relative_url:
+        # Construimos la URL completa para la página actual
+        current_url = base_url + relative_url
+        print(f"Scrapeando página: {current_url}")
 
-    try:
-        # Realizamos la petición GET a la página
-        response = requests.get(url)
-        # Lanzamos una excepción si la petición no fue exitosa (código de estado no es 200)
-        response.raise_for_status()
+        try:
+            response = requests.get(current_url)
+            response.raise_for_status()
 
-        # Analizamos el contenido HTML con BeautifulSoup
-        soup = BeautifulSoup(response.content, 'html.parser')
+            soup = BeautifulSoup(response.content, 'html.parser')
+            quotes_html = soup.find_all('div', class_='quote')
 
-        # Buscamos todos los contenedores de citas, que tienen la clase CSS 'quote'
-        quotes_html = soup.find_all('div', class_='quote')
+            if not quotes_html and not all_scraped_data:
+                print("No se encontraron citas en la página inicial.")
+                return
 
-        if not quotes_html:
-            print("No se encontraron citas en la página.")
-            return
+            for quote in quotes_html:
+                text = quote.find('span', class_='text').get_text(strip=True)
+                author = quote.find('small', class_='author').get_text(strip=True)
+                tags_html = quote.find('div', class_='tags').find_all('a', class_='tag')
+                tags = [tag.get_text(strip=True) for tag in tags_html]
 
-        # Creamos una lista para almacenar los datos extraídos
-        scraped_data = []
+                all_scraped_data.append({
+                    'Cita': text,
+                    'Autor': author,
+                    'Etiquetas': ', '.join(tags)
+                })
+            
+            # Buscamos el botón "Next" para la paginación
+            next_button = soup.find('li', class_='next')
+            if next_button:
+                # Si existe, obtenemos el enlace (href) y preparamos para la siguiente iteración
+                relative_url = next_button.find('a')['href']
+                time.sleep(1) # Pequeña pausa para ser respetuosos con el servidor
+            else:
+                # Si no hay botón "Next", terminamos el bucle
+                relative_url = None
+                print("No hay más páginas. Finalizando scraping.")
 
-        # Iteramos sobre cada cita encontrada
-        for quote in quotes_html:
-            # Extraemos el texto de la cita (etiqueta 'span' con clase 'text')
-            text = quote.find('span', class_='text').get_text(strip=True)
-            # Extraemos el autor (etiqueta 'small' con clase 'author')
-            author = quote.find('small', class_='author').get_text(strip=True)
-            # Extraemos las etiquetas (todas las etiquetas 'a' dentro de la 'div' con clase 'tags')
-            tags_html = quote.find('div', class_='tags').find_all('a', class_='tag')
-            tags = [tag.get_text(strip=True) for tag in tags_html]
+        except requests.exceptions.RequestException as e:
+            print(f"Error en la página {current_url}: {e}")
+            break # Salimos del bucle si hay un error de red
+        except Exception as e:
+            print(f"Ha ocurrido un error inesperado: {e}")
+            break
 
-            # Guardamos los datos extraídos en un diccionario
-            scraped_data.append({
-                'Cita': text,
-                'Autor': author,
-                'Etiquetas': ', '.join(tags) # Unimos las etiquetas en un solo string
-            })
-        
-        # Creamos un DataFrame de pandas con los datos recolectados
-        df = pd.DataFrame(scraped_data)
+    if not all_scraped_data:
+        print("No se pudo recolectar ninguna cita.")
+        return
 
-        # Nombre del archivo de salida
-        output_filename = "citas.xlsx"
+    # Creamos el DataFrame y lo guardamos en Excel
+    df = pd.DataFrame(all_scraped_data)
+    output_filename = "citas.xlsx"
+    df.to_excel(output_filename, index=False)
 
-        # Guardamos el DataFrame en un archivo Excel, sin el índice
-        df.to_excel(output_filename, index=False)
+    print(f"\n¡Éxito! Se han guardado {len(all_scraped_data)} citas en el archivo '{output_filename}'.")
 
-        print(f"¡Éxito! Se han guardado {len(scraped_data)} citas en el archivo '{output_filename}'.")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error al realizar la petición HTTP: {e}")
-    except Exception as e:
-        print(f"Ha ocurrido un error inesperado: {e}")
-
-# Punto de entrada principal del script
 if __name__ == "__main__":
-    scrape_quotes()
+    scrape_all_quotes()
