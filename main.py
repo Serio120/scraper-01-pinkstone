@@ -1,28 +1,70 @@
+
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import openpyxl
 
-print("¡Hola desde tu aplicación de Python!")
-print("Estoy listo para empezar a recolectar datos.")
+def scrape_quotes():
+    """
+    Esta función recolecta citas de la página 'http://quotes.toscrape.com',
+    las procesa y las guarda en un archivo Excel.
+    """
+    # URL del sitio a scrapear
+    url = "http://quotes.toscrape.com/"
 
-# Ejemplo de cómo podrías usar las librerías:
-url = "https://example.com"
-response = requests.get(url)
-soup = BeautifulSoup(response.content, '''html.parser''')
-print(soup.title.string)
+    print(f"Iniciando scraping de {url}...")
 
-# ----> ¡Empieza a editar desde aquí! <----
+    try:
+        # Realizamos la petición GET a la página
+        response = requests.get(url)
+        # Lanzamos una excepción si la petición no fue exitosa (código de estado no es 200)
+        response.raise_for_status()
 
-# 1. Descomenta estas líneas
-url = "https://quotes.toscrape.com/" # Un buen sitio para practicar
-response = requests.get(url)
+        # Analizamos el contenido HTML con BeautifulSoup
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-# 2. Usa BeautifulSoup para analizar el HTML
-soup = BeautifulSoup(response.content, 'html.parser')
+        # Buscamos todos los contenedores de citas, que tienen la clase CSS 'quote'
+        quotes_html = soup.find_all('div', class_='quote')
 
-# 3. Extrae la información que necesitas
-title = soup.find('h1')
-print(f"El título de la página es: {title.text}")
+        if not quotes_html:
+            print("No se encontraron citas en la página.")
+            return
 
-# 4. Itera sobre elementos, guárdalos en una lista y luego en un Excel...
+        # Creamos una lista para almacenar los datos extraídos
+        scraped_data = []
+
+        # Iteramos sobre cada cita encontrada
+        for quote in quotes_html:
+            # Extraemos el texto de la cita (etiqueta 'span' con clase 'text')
+            text = quote.find('span', class_='text').get_text(strip=True)
+            # Extraemos el autor (etiqueta 'small' con clase 'author')
+            author = quote.find('small', class_='author').get_text(strip=True)
+            # Extraemos las etiquetas (todas las etiquetas 'a' dentro de la 'div' con clase 'tags')
+            tags_html = quote.find('div', class_='tags').find_all('a', class_='tag')
+            tags = [tag.get_text(strip=True) for tag in tags_html]
+
+            # Guardamos los datos extraídos en un diccionario
+            scraped_data.append({
+                'Cita': text,
+                'Autor': author,
+                'Etiquetas': ', '.join(tags) # Unimos las etiquetas en un solo string
+            })
+        
+        # Creamos un DataFrame de pandas con los datos recolectados
+        df = pd.DataFrame(scraped_data)
+
+        # Nombre del archivo de salida
+        output_filename = "citas.xlsx"
+
+        # Guardamos el DataFrame en un archivo Excel, sin el índice
+        df.to_excel(output_filename, index=False)
+
+        print(f"¡Éxito! Se han guardado {len(scraped_data)} citas en el archivo '{output_filename}'.")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error al realizar la petición HTTP: {e}")
+    except Exception as e:
+        print(f"Ha ocurrido un error inesperado: {e}")
+
+# Punto de entrada principal del script
+if __name__ == "__main__":
+    scrape_quotes()
