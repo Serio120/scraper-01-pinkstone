@@ -1,106 +1,136 @@
+"""Scraper de citas de quotes.toscrape.com con exportación a Excel."""
 
+from __future__ import annotations
+
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
-import time
-import logging
-import concurrent.futures
 
-# --- CONFIGURACIÓN DEL LOGGER ---
+BASE_URL = "https://quotes.toscrape.com"
+OUTPUT_FILE = "citas.xlsx"
+REQUEST_TIMEOUT = 15
+MAX_WORKERS = 10
 
-def setup_logging():
-    """Configura el sistema de logging para consola y archivo."""
-    logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+
+def configure_logging(log_file: str | Path | None = "scraper.log") -> logging.Logger:
+    """Configura logging una sola vez; no crea archivos al importar el módulo."""
     logger.setLevel(logging.INFO)
-    if logger.hasHandlers():
+    logger.propagate = False
+
+    if logger.handlers:
         return logger
-    log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler = logging.FileHandler('scraper.log', mode='w')
-    file_handler.setFormatter(log_format)
+
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_format)
-    logger.addHandler(file_handler)
+    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+
+    if log_file is not None:
+        file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
     return logger
 
-logger = setup_logging()
 
-# --- MÓDULO DE EXTRACCIÓN (OPTIMIZADO PARA PARALELISMO) ---
+def scrape_page(url: str, timeout: float = REQUEST_TIMEOUT) -> list[dict[str, str]]:
+    """Extrae citas de una página. Un error de red devuelve una lista vacía."""
+    logger.info("Iniciando scraping de: %s", url)
 
-def scrape_page(url):
-    """Scrapea una única página y devuelve solo los datos de las citas."""
     try:
-        logger.info(f"Iniciando scraping de: {url}")
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=timeout)
         response.raise_for_status()
-
-        soup = BeautifulSoup(response.content, 'html.parser')
-        quotes_html = soup.find_all('div', class_='quote')
-        page_data = []
-
-        for i, quote in enumerate(quotes_html):
-            try:
-                text = quote.find('span', class_='text').get_text(strip=True)
-                author = quote.find('small', class_='author').get_text(strip=True)
-                tags_html = quote.find('div', class_='tags').find_all('a', class_='tag')
-                tags = [tag.get_text(strip=True) for tag in tags_html]
-                page_data.append({'Cita': text, 'Autor': author, 'Etiquetas': ', '.join(tags)})
-            except AttributeError:
-                logger.error(f"Error de parsing en una cita de {url}. Estructura HTML inválida.")
-                continue
-        
-        logger.info(f"Finalizado scraping de: {url}. Citas encontradas: {len(page_data)}")
-        return page_data
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Fallo al scrapear {url}: {e}")
-        return [] # Devuelve lista vacía en caso de error de red
-    except Exception as e:
-        logger.exception(f"Error inesperado procesando {url}")
+    except requests.exceptions.RequestException:
+        logger.exception("Fallo al solicitar %s", url)
         return []
 
-# --- MÓDULO DE ALMACENAMIENTO ---
+    soup = BeautifulSoup(response.content, "html.parser")
+    page_data: list[dict[str, str]] = []
 
-def save_to_excel(all_data, filename="citas.xlsx"):
-    """Guarda los datos en Excel, con logging."""
+    for quote in soup.find_all("div", class_="quote"):
+        text_node = quote.find("span", class_="text")
+        author_node = quote.find("small", class_="author")
+
+        if text_node is None or author_node is None:
+            logger.warning("Se omite una cita con estructura incompleta en %s", url)
+            continue
+
+        tags_container = quote.find("div", class_="tags")
+        tags = (
+            [tag.get_text(strip=True) for tag in tags_container.find_all("a", class_="tag")]
+            if tags_container is not None
+            else []
+        )
+
+        page_data.append(
+            {
+                "Cita": text_node.get_text(strip=True),
+                "Autor": author_node.get_text(strip=True),
+                "Etiquetas": ", ".join(tags),
+            }
+        )
+
+    logger.info("Finalizado scraping de %s. Citas encontradas: %s", url, len(page_data))
+    return page_data
+
+
+def save_to_excel(
+    all_data: list[dict[str, str]], filename: str | Path = OUTPUT_FILE
+) -> bool:
+    """Guarda las citas en Excel y devuelve True si la exportación termina bien."""
     if not all_data:
-        logger.warning("No se encontraron datos para guardar.")
-        return
+        logger.warning("No hay datos para guardar.")
+        return False
+
     try:
-        logger.info(f"Guardando {len(all_data)} registros en {filename}.")
-        df = pd.DataFrame(all_data)
-        df.to_excel(filename, index=False)
-        logger.info(f"¡Éxito! El archivo se ha guardado correctamente.")
-    except Exception:
-        logger.exception("Error crítico al guardar el archivo Excel.")
+        output_path = Path(filename)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataframe = pd.DataFrame(all_data, columns=["Cita", "Autor", "Etiquetas"])
+        dataframe.to_excel(output_path, index=False)
+    except (OSError, ValueError, ImportError):
+        logger.exception("No se pudo guardar el archivo Excel: %s", filename)
+        return False
 
-# --- FUNCIÓN PRINCIPAL (ORQUESTADOR PARALELO) ---
+    logger.info("Archivo Excel guardado: %s (%s registros)", filename, len(all_data))
+    return True
 
-def main():
-    """Orquesta el scraping en paralelo de todas las páginas de citas."""
-    logger.info("="*50)
-    logger.info("INICIANDO PROCESO DE SCRAPING PARALELO")
-    logger.info("="*50)
 
-    base_url = "http://quotes.toscrape.com"
-    # Generamos la lista de todas las URLs que vamos a atacar
-    urls_to_scrape = [f"{base_url}/page/{i}/" for i in range(1, 11)]
-    logger.info(f"{len(urls_to_scrape)} páginas serán procesadas en paralelo.")
+def main(
+    base_url: str = BASE_URL,
+    pages: int = 10,
+    output_file: str | Path = OUTPUT_FILE,
+    max_workers: int = MAX_WORKERS,
+    timeout: float = REQUEST_TIMEOUT,
+) -> int:
+    """Descarga las páginas en paralelo y devuelve el número de citas extraídas."""
+    if pages < 1:
+        raise ValueError("pages debe ser mayor que cero")
+    if max_workers < 1:
+        raise ValueError("max_workers debe ser mayor que cero")
+    if timeout <= 0:
+        raise ValueError("timeout debe ser mayor que cero")
 
-    all_quotes = []
-    # Usamos ThreadPoolExecutor para lanzar peticiones en hilos paralelos
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # 'executor.map' aplica 'scrape_page' a cada URL de la lista
-        # y mantiene el orden de los resultados.
-        results = executor.map(scrape_page, urls_to_scrape)
+    configure_logging()
+    urls = [f"{base_url.rstrip('/')}/page/{page}/" for page in range(1, pages + 1)]
+    logger.info("Se procesarán %s páginas con hasta %s trabajadores.", pages, max_workers)
 
+    all_quotes: list[dict[str, str]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(lambda url: scrape_page(url, timeout=timeout), urls)
         for page_quotes in results:
-            if page_quotes:
-                all_quotes.extend(page_quotes)
+            all_quotes.extend(page_quotes)
 
-    logger.info(f"Scraping paralelo finalizado. Total de citas recolectadas: {len(all_quotes)}.")
-    save_to_excel(all_quotes)
-    logger.info("FIN DEL PROCESO.")
+    logger.info("Scraping finalizado. Total de citas: %s", len(all_quotes))
+    save_to_excel(all_quotes, output_file)
+    return len(all_quotes)
+
 
 if __name__ == "__main__":
     main()
